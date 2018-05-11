@@ -1,0 +1,64 @@
+---
+- name:  Cleanup AWS EC2 environment
+  hosts:  localhost
+  gather_facts:  False
+  vars_files:
+    - vars/aws_vars.yml
+    - vars/other.yml
+  environment:
+    AWS_ACCESS_KEY_ID:  "{{aws_access_key_id}}"
+    AWS_SECRET_ACCESS_KEY:  "{{aws_secret_access_key}}"
+
+  tasks:
+    - name:  gather information about the VPC
+      ec2_vpc_net_facts:
+        filters:
+          "tag:Name":  "{{ aws_vpc_name }}"
+        region:  "{{ aws_region }}"
+      register:  vpc_info
+
+    - name:  print VPC information
+      debug:
+        var:  vpc_info
+
+    - name:  print VPC id information
+      debug:
+        var:  vpc_info.vpcs[0].id
+
+    - name:  get security group facts
+      ec2_group_facts:
+        region:  "{{ aws_region }}"
+        filters:
+          vpc-id:  "{{ vpc_info.vpcs[0].id }}"
+          group-name:  default
+      register:  security_group_info
+      when:  vpc_info.vpcs
+
+    - name:  print security group info
+      debug:
+        var:  security_group_info
+
+    - name: get instance facts
+      ec2_instance_facts:
+        filters:
+          vpc-id:  "{{ vpc_info.vpcs[0].id }}"
+        region:  "{{ aws_region }}"
+      register: instance_facts
+
+    - name: print instance facts
+      debug:
+        var: instance_facts
+
+#    - name: print individual instance facts
+#      debug:
+#        var: item.instance_id
+#      with_items: "{{ instance_facts.instances }}"
+
+    - name: delete instances
+      ec2:
+        image: "{{ aws_ami_image }}"
+        instance_ids: "{{ item.instance_id }}"
+        instance_type: "{{ aws_instance_type }}"
+        region:  "{{ aws_region }}"
+        state: absent
+      with_items: "{{ instance_facts.instances }}"

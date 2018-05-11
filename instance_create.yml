@@ -1,0 +1,106 @@
+---
+- name:  Create and launch an instance
+  hosts:  localhost
+  gather_facts:  False
+  vars_files:
+    - vars/aws_vars.yml
+    - vars/other.yml
+  environment:
+    AWS_ACCESS_KEY_ID:  "{{aws_access_key_id}}"
+    AWS_SECRET_ACCESS_KEY:  "{{aws_secret_access_key}}"
+
+  tasks:
+    - name:  gather information about the VPC
+      ec2_vpc_net_facts:
+        filters:
+          "tag:Name":  "{{ aws_vpc_name }}"
+        region:  "{{ aws_region }}"
+      register:  vpc_info
+
+    - name:  print VPC id information
+      debug:
+        var:  vpc_info.vpcs[0].id
+
+    - name:  get security group facts
+      ec2_group_facts:
+        region:  "{{ aws_region }}"
+        filters:
+          vpc-id:  "{{ vpc_info.vpcs[0].id }}"
+          group-name:  "{{ aws_securitygroup_name }}"
+      register:  security_group_info
+      when:  vpc_info.vpcs
+
+#    - name:  print security group info
+#      debug:
+#        var:  security_group_info
+
+    - name:  print security group id info
+      debug:
+        var:  security_group_info.security_groups[0].group_id
+
+    - name:  get subnet facts
+      ec2_vpc_subnet_facts:
+        filters:
+          vpc-id:  "{{ vpc_info.vpcs[0].id }}"
+          "tag:Name":  "{{ aws_subnet_name }}"
+        region:  "{{ aws_region }}"
+      register: subnet_info
+
+#    - name: print subnet info
+#      debug:
+#        var: subnet_info
+
+    - name: print subnet id info
+      debug:
+        var: subnet_info.subnets[0].id
+
+    - name:  create and launch instance
+      ec2:
+        key_name: "{{ aws_keypair }}"
+        group_id: "{{ security_group_info.security_groups[0].group_id }}"
+        instance_type: "{{ aws_instance_type }}"
+        image: "{{ aws_ami_image }}"
+        wait: true
+        region: "{{ aws_region }}"
+        vpc_subnet_id: "{{ subnet_info.subnets[0].id }}"
+        exact_count: 1
+        count_tag:
+          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}"-ct
+        instance_tags:
+          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}"-it
+        volumes:
+          - device_name: /dev/sdb
+            volume_type: gp2
+            volume_size: 10
+            delete_on_termination: True
+        assign_public_ip: yes
+      register: instance_info
+
+    - name: print instance info
+      debug:
+        var: instance_info
+
+    - name: Add new instance to host group
+      add_host:
+        hostname: "{{ item.public_ip }}"
+        groupname: launched
+      with_items: "{{ instance_info.instances }}"
+
+    - name: Wait for SSH to come up
+      wait_for:
+        host: "{{ item.public_dns_name }}"
+        port: 22
+        delay: 60
+        timeout: 320
+        state: started
+      with_items: "{{ instance_info.instances }}"
+
+- name: Configure instance(s) as NFS server
+  hosts: launched
+  become: True
+  gather_facts: True
+  vars:
+    ansible_user:  ec2-user
+
+  roles:
+    - nfs_svr
