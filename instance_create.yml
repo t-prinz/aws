@@ -65,9 +65,9 @@
         vpc_subnet_id: "{{ subnet_info.subnets[0].id }}"
         exact_count: 1
         count_tag:
-          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}"-ct
+          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-ct"
         instance_tags:
-          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}"-it
+          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-it"
         volumes:
           - device_name: /dev/sdb
             volume_type: gp2
