@@ -1,0 +1,70 @@
+---
+- name:  Create AWS environment
+  hosts:  localhost
+  gather_facts:  False
+  vars_files:
+    - vars/aws_vars.yml
+    - vars/other.yml
+  environment:
+    AWS_ACCESS_KEY_ID:  "{{aws_access_key_id}}"
+    AWS_SECRET_ACCESS_KEY:  "{{aws_secret_access_key}}"
+
+  tasks:
+    - name:  create VPC
+      ec2_vpc_net:
+        name:  "{{ aws_vpc_name }}"
+        region:  "{{ aws_region }}"
+        cidr_block:  "{{ aws_cidr_block }}"
+        state:  present
+      register:  vpc_info
+
+    - name:  print vpc info
+      debug:
+        var:  vpc_info
+
+    - name:  create subnet for VPC
+      ec2_vpc_subnet:
+        az:  "{{ aws_az }}"
+        cidr:  "{{ aws_cidr_block }}"
+#        map_public:  True
+        region:  "{{ aws_region }}"
+        state:  present
+        tags:
+          Name:  "{{ aws_subnet_name }}"
+        vpc_id:  "{{ vpc_info.vpc.id }}"
+      register:  subnet_info
+
+    - name:  print subnet info
+      debug:
+        var:  subnet_info
+
+    - name:  create security group
+      ec2_group:
+        description:  allow http, https, and ssh access
+        name:  "{{ aws_securitygroup_name }}"
+        region:  "{{ aws_region }}"
+        state:  present
+        tags:
+          Name:  "{{ aws_securitygroup_name }}"
+        vpc_id:  "{{ vpc_info.vpc.id }}"
+        rules:
+          - proto:  tcp
+            from_port:  80
+            to_port:  80
+            cidr_ip:  0.0.0.0/0
+          - proto:  tcp
+            from_port:  443
+            to_port:  443
+            cidr_ip:  0.0.0.0/0
+          - proto:  tcp
+            from_port:  22
+            to_port:  22
+            cidr_ip:  0.0.0.0/0
+        rules_egress:
+          - proto:  all
+            cidr_ip:  0.0.0.0/0
+      register:  securitygroup_info
+
+    - name:  print security group information
+      debug:
+        var: securitygroup_info
