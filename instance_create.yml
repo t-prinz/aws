@@ -1,5 +1,5 @@
 ---
-- name:  Create and launch an instance
+- name:  Create and launch an Amazon EC2 instance
   hosts:  localhost
   gather_facts:  False
   vars_files:
@@ -20,6 +20,7 @@
     - name:  print VPC id information
       debug:
         var:  vpc_info.vpcs[0].id
+      when:  vpc_info.vpcs
 
     - name:  get security group facts
       ec2_group_facts:
@@ -57,6 +58,30 @@
         var: subnet_info.subnets[0].id
       when:  subnet_info
 
+    - name: set fact indicating the type of instance (Micro)
+      set_fact:
+        aws_instance_type: t2.micro
+      when: aws_instance_friendly_type == "Micro"
+
+    - name: set fact indicating the type of instance (Small)
+      set_fact:
+        aws_instance_type: t2.small
+      when: aws_instance_friendly_type == "Small"
+
+    - name: set fact indicating the type of instance (Medium)
+      set_fact:
+        aws_instance_type: t2.medium
+      when: aws_instance_friendly_type == "Medium"
+
+    - name: set fact indicating the type of instance (Large)
+      set_fact:
+        aws_instance_type: t2.large
+      when: aws_instance_friendly_type == "Large"
+
+    - name: print instance type
+      debug:
+        var: aws_instance_type
+
     - name:  create and launch instance
       ec2:
         key_name: "{{ aws_keypair }}"
@@ -70,9 +95,9 @@
         vpc_subnet_id: subnet-02064c4a308f02838
         exact_count: 1
         count_tag:
-          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-ct-hcode"
+          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-count"
         instance_tags:
-          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-it-hcode"
+          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-instance"
         volumes:
           - device_name: /dev/sdb
             volume_type: gp2
