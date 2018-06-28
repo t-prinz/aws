@@ -1,11 +1,18 @@
 ---
 # tasks file for nfs_svr
-- name: Ensure NFS software is installed
+- name: Ensure NFS and firewalld software is installed
   yum:
     name: "{{ item }}"
     state: present
   with_items:
     - nfs-utils
+    - firewalld
+
+- name: Ensure firewalld service is started and enabled on boot
+  service:
+    enabled: yes
+    name: firewalld
+    state: started
 
 - name: Ensure firewall is configured for NFS
   firewalld:
@@ -18,12 +25,8 @@
     - rpc-bind
     - mountd
 
-- name: Ensure NFS service is started
+- name: Ensure NFS service is started and enabled on boot
   service:
+    enabled: yes
     name: nfs-server
     state: started
-
-- name: Ensure NFS service is enabled on boot
-  service:
-    name: nfs-server
-    enabled: yes

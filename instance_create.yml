@@ -37,6 +37,7 @@
     - name:  print security group id info
       debug:
         var:  security_group_info.security_groups[0].group_id
+      when:  security_group_info
 
     - name:  get subnet facts
       ec2_vpc_subnet_facts:
@@ -45,6 +46,7 @@
           "tag:Name":  "{{ aws_subnet_name }}"
         region:  "{{ aws_region }}"
       register: subnet_info
+      when:  vpc_info.vpcs
 
 #    - name: print subnet info
 #      debug:
@@ -53,21 +55,24 @@
     - name: print subnet id info
       debug:
         var: subnet_info.subnets[0].id
+      when:  subnet_info
 
     - name:  create and launch instance
       ec2:
         key_name: "{{ aws_keypair }}"
-        group_id: "{{ security_group_info.security_groups[0].group_id }}"
+#        group_id: "{{ security_group_info.security_groups[0].group_id }}"
+        group_id: sg-0c1ec3a7d37c813d4
         instance_type: "{{ aws_instance_type }}"
         image: "{{ aws_ami_image }}"
         wait: true
         region: "{{ aws_region }}"
-        vpc_subnet_id: "{{ subnet_info.subnets[0].id }}"
+#        vpc_subnet_id: "{{ subnet_info.subnets[0].id }}"
+        vpc_subnet_id: subnet-02064c4a308f02838
         exact_count: 1
         count_tag:
-          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-ct"
+          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-ct-hcode"
         instance_tags:
-          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-it"
+          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-it-hcode"
         volumes:
           - device_name: /dev/sdb
             volume_type: gp2
@@ -101,6 +106,8 @@
   gather_facts: True
   vars:
     ansible_user:  ec2-user
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: False
 
   roles:
     - nfs_svr
