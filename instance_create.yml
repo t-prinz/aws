@@ -97,7 +97,7 @@
         count_tag:
           Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-count"
         instance_tags:
-          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-instance"
+          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-{{ aws_instance_tag }}"
         volumes:
           - device_name: /dev/sdb
             volume_type: gp2

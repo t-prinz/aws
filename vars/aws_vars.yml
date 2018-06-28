@@ -13,3 +13,4 @@ aws_instance_core_name: ec2-svr
 aws_instance_friendly_type: Micro
 aws_instance_type: t2.micro
 aws_ami_image: ami-c998b6b2
+aws_instance_tag: myinstance
