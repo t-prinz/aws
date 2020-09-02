@@ -1,138 +1,350 @@
 ---
-- name:  Create and launch an Amazon EC2 instance
-  hosts:  localhost
-  gather_facts:  False
+#
+# Create instances along with associated resources:
+#   - instance
+#   - elastic ip's
+#   - route53 dns entries
+#
+# This assumes that the base environment has already been created
+#
+# TODO:
+#
+# Use ec2_win_password to get initial password so that the password can be reset
+#  Reference:  https://aws.amazon.com/premiumsupport/knowledge-center/retrieve-windows-admin-password/
+#
+
+- name: Create and launch a set of Amazon EC2 instances
+  hosts: localhost
+  gather_facts: False
+  vars:
+    credfile: "../../.mycreds/democreds.yml"
+    linux_ansible_username: "ec2-user"
   vars_files:
     - vars/aws_vars.yml
-    - vars/other.yml
-  environment:
-    AWS_ACCESS_KEY_ID:  "{{aws_access_key_id}}"
-    AWS_SECRET_ACCESS_KEY:  "{{aws_secret_access_key}}"
 
   tasks:
-    - name:  gather information about the VPC
-      ec2_vpc_net_facts:
-        filters:
-          "tag:Name":  "{{ aws_vpc_name }}"
-        region:  "{{ aws_region }}"
-      register:  vpc_info
 
-    - name:  print VPC id information
+###
+    - name: Check for credentials file
+      stat:
+        path: "{{ credfile }}"
+      register: stat_results
+
+    - name: Define credentials using local file
+      block:
+
+      - name: Include variable definitions from local file
+        include_vars:
+          file: "{{ credfile }}"
+
+      - name: Define Ansible Tower credentials based on local file
+        set_fact:
+          windows_admin_username: "{{ cf_windows_admin_username }}"
+          windows_admin_password: "{{ cf_windows_admin_password }}"
+
+      when: stat_results.stat.exists
+
+    - name: Define credentials using Ansible Tower custom credentials
+      block:
+
+      - name: Define Ansible Tower credentials based on custom credential
+        set_fact:
+          windows_admin_username: "{{ at_windows_admin_username }}"
+          windows_admin_password: "{{ at_windows_admin_password }}"
+
+      when: not stat_results.stat.exists
+###
+    - name: gather information about the VPC
+      ec2_vpc_net_info:
+        filters:
+          "tag:Name": "{{ aws_vpc_name }}"
+        region: "{{ aws_region }}"
+      register: vpc_info
+
+    - name: print VPC id information
       debug:
-        var:  vpc_info.vpcs[0].id
-      when:  vpc_info.vpcs
+        var: vpc_info.vpcs[0].id
+        verbosity: 1
+      when: vpc_info.vpcs is defined
 
-    - name:  get security group facts
-      ec2_group_facts:
-        region:  "{{ aws_region }}"
+    - name: get security group facts
+      ec2_group_info:
+        region: "{{ aws_region }}"
         filters:
-          vpc-id:  "{{ vpc_info.vpcs[0].id }}"
-          group-name:  "{{ aws_securitygroup_name }}"
-      register:  security_group_info
-      when:  vpc_info.vpcs
+          vpc-id: "{{ vpc_info.vpcs[0].id }}"
+          group-name: "{{ aws_securitygroup_name }}"
+      register: security_group_info
+      when: vpc_info.vpcs is defined
 
-#    - name:  print security group info
-#      debug:
-#        var:  security_group_info
-
-    - name:  print security group id info
+    - name: print security group info
       debug:
-        var:  security_group_info.security_groups[0].group_id
-      when:  security_group_info
+        var: security_group_info
+        verbosity: 1
 
-    - name:  get subnet facts
-      ec2_vpc_subnet_facts:
+    - name: print security group id info
+      debug:
+        var: security_group_info.security_groups[0].group_id
+        verbosity: 1
+      when: security_group_info is defined
+
+    - name: get subnet facts
+      ec2_vpc_subnet_info:
         filters:
-          vpc-id:  "{{ vpc_info.vpcs[0].id }}"
-          "tag:Name":  "{{ aws_subnet_name }}"
-        region:  "{{ aws_region }}"
+          vpc-id: "{{ vpc_info.vpcs[0].id }}"
+          "tag:Name": "{{ aws_subnet_name }}"
+        region: "{{ aws_region }}"
       register: subnet_info
-      when:  vpc_info.vpcs
+      when: vpc_info.vpcs is defined
 
-#    - name: print subnet info
-#      debug:
-#        var: subnet_info
+    - name: print subnet info
+      debug:
+        var: subnet_info
+        verbosity: 1
 
     - name: print subnet id info
       debug:
         var: subnet_info.subnets[0].id
-      when:  subnet_info
+        verbosity: 1
+      when: subnet_info is defined
 
-    - name: set fact indicating the type of instance (Micro)
-      set_fact:
-        aws_instance_type: t2.micro
-      when: aws_instance_friendly_type == "Micro"
-
-    - name: set fact indicating the type of instance (Small)
-      set_fact:
-        aws_instance_type: t2.small
-      when: aws_instance_friendly_type == "Small"
-
-    - name: set fact indicating the type of instance (Medium)
-      set_fact:
-        aws_instance_type: t2.medium
-      when: aws_instance_friendly_type == "Medium"
-
-    - name: set fact indicating the type of instance (Large)
-      set_fact:
-        aws_instance_type: t2.large
-      when: aws_instance_friendly_type == "Large"
-
-    - name: print instance type
-      debug:
-        var: aws_instance_type
-
-    - name:  create and launch instance
-      ec2:
-        key_name: "{{ aws_keypair }}"
+#    - name: create and launch instance
+#      ec2:
+#        key_name: "{{ aws_keypair }}"
 #        group_id: "{{ security_group_info.security_groups[0].group_id }}"
-        group_id: sg-0c1ec3a7d37c813d4
-        instance_type: "{{ aws_instance_type }}"
-        image: "{{ aws_ami_image }}"
-        wait: true
-        region: "{{ aws_region }}"
+#        instance_type: "{{ item.aws_instance_type }}"
+#        image: "{{ item.aws_image }}"
+#        wait: true
+#        region: "{{ aws_region }}"
 #        vpc_subnet_id: "{{ subnet_info.subnets[0].id }}"
-        vpc_subnet_id: subnet-02064c4a308f02838
-        exact_count: 1
-        count_tag:
-          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-count"
-        instance_tags:
-          Name: "{{ aws_baseid_name }}-{{ aws_instance_core_name }}-{{ aws_instance_tag }}"
+#        exact_count: "{{ item.aws_exact_count }}"
+#        count_tag:
+#          Name: "{{ aws_base_name }}-count"
+#        instance_tags:
+#          Name: "{{ aws_base_name }}-{{ item.ansible_instance_shortname }}"
+#        volumes:
+#          - device_name: /dev/sdb
+#            volume_type: gp2
+#            volume_size: 10
+#            delete_on_termination: True
+#        assign_public_ip: "{{ item.aws_assign_public_ip }}"
+#      with_items: "{{ aws_instances }}"
+#      register: instances_info
+
+    - name: create and launch instance
+      ec2_instance:
+        image_id: "{{ item.aws_image_id }}"
+        instance_type: "{{ item.aws_instance_type }}"
+        key_name: "{{ aws_keypair }}"
+        name: "{{ aws_base_name }}-{{ item.ansible_instance_shortname }}"
+        network:
+          assign_public_ip: "{{ item.aws_assign_public_ip }}"
+        region: "{{ aws_region }}"
+        security_group: "{{ security_group_info.security_groups[0].group_id }}"
+#        tower_callback.windows: "{{ ('True') if (item.instance_os_type == 'Windows') else omit }}"
+#        tower_callback.set_password: "{{ windows_admin_password if (item.instance_os_type == 'Windows') else omit }}"
+        state: present
+        tags:
+          OS_Type: "{{ item.instance_os_type }}"
         volumes:
           - device_name: /dev/sdb
-            volume_type: gp2
-            volume_size: 10
-            delete_on_termination: True
-        assign_public_ip: yes
-      register: instance_info
+            ebs:
+              volume_size: 10
+              delete_on_termination: True
+        vpc_subnet_id: "{{ subnet_info.subnets[0].id }}"
+        wait: true
+      with_items: "{{ aws_instances }}"
+      register: instances_info
 
     - name: print instance info
       debug:
-        var: instance_info
+        var: instances_info.results
+        verbosity: 1
 
-    - name: Add new instance to host group
+    - name: print instance ids
+      debug:
+        msg: "instance id = {{ item.instance_ids[0] }}"
+        verbosity: 1
+      with_items: "{{ instances_info.results }}"
+
+###
+    - name: Define common Linux host variables
+      set_fact:
+        common_linux_hostvars: "ansible_user={{ linux_ansible_username }} ansible_ssh_private_key_file={{ aws_keypair_key_file }}"
+
+    - name: Define common Windows host variables
+      set_fact:
+        common_windows_hostvars: "ansible_user={{ windows_admin_username }} ansible_password={{ windows_admin_password }} ansible_connection=winrm ansible_winrm_transport=ntlm ansible_port=5986 ansible_winrm_server_cert_validation=ignore"
+###
+
+    - name: Add new instance to host group, if the instance has been marked as having changed
       add_host:
-        hostname: "{{ item.public_ip }}"
+        hostname: "{{ item.instances[0].public_dns_name }}"
         groupname: launched
-      with_items: "{{ instance_info.instances }}"
+        ansible_ssh_extra_args: "{{ ('-o StrictHostKeyChecking=no') if (item.instances[0].tags.OS_Type == 'Linux') else omit }}"
+        ansible_user: "{{ linux_ansible_username if (item.instances[0].tags.OS_Type == 'Linux') else windows_admin_username }}"
+        ansible_ssh_private_key_file: "{{ aws_keypair_key_file if (item.instances[0].tags.OS_Type == 'Linux') else omit }}"
+        ansible_password: "{{ windows_admin_password if (item.instances[0].tags.OS_Type == 'Windows') else omit }}"
+        ansible_connection: "{{ ('winrm') if (item.instances[0].tags.OS_Type == 'Windows') else omit }}"
+        ansible_winrm_transport: "{{ ('ntlm') if (item.instances[0].tags.OS_Type == 'Windows') else omit }}"
+        ansible_port: "{{ ('5986') if (item.instances[0].tags.OS_Type == 'Windows') else omit }}"
+        specified_os_type: "{{ item.instances[0].tags.OS_Type }}"
+      with_items: "{{ instances_info.results }}"
+      when: item.changed
 
-    - name: Wait for SSH to come up
+    - name: Generate elastic IP for instances
+      ec2_eip:
+        device_id: "{{ item.instance_ids[0] }}"
+        region: "{{ aws_region }}"
+        release_on_disassociation: yes
+        tag_name: "Name"
+        tag_value: "{{ item.instances[0].key_name }}"
+      with_items: "{{ instances_info.results }}"
+      register: eip_info
+
+    - name: print eip info
+      debug:
+        msg: "{{ item.allocation_id }} has Name: {{ item['item'].instances[0].tags.Name }}"
+        verbosity: 1
+      with_items: "{{ eip_info.results }}"
+
+    - name: tag eip
+      ec2_tag:
+        region: "{{ aws_region }}"
+        resource: "{{ item.allocation_id }}"
+        state: present
+        tags:
+          Name: "{{ item['item'].instances[0].tags.Name }}"
+      with_items: "{{ eip_info.results }}"
+
+    - name: print elastic IP info
+      debug:
+        var: eip_info.results
+        verbosity: 1
+
+    - name: print the dns name
+      debug:
+        msg: "hostname {{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }} has IP {{ item.public_ip }}"
+        verbosity: 1
+      with_items: "{{ eip_info.results }}"
+
+    - name: Generate route53 entry for the elastic IP
+      route53:
+        record: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }}"
+        state: present
+        ttl: 300
+        type: A
+        value: "{{ item.public_ip }}"
+        wait: Yes
+        zone: "{{ aws_route53_zone }}"
+      with_items: "{{ eip_info.results }}"
+      register: route53_info
+
+    - name: Print route53 dns info
+      debug:
+        var: route53_info
+        verbosity: 1
+
+#    - name: Add new instance to host group
+#      add_host:
+#        hostname: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }}"
+#        groupname: launched
+#        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no"
+#      with_items: "{{ eip_info.results }}"
+
+    - name: Print state of instances
+      debug:
+        msg: " Instance {{ item['item'].instances[0].tags.Name }} is {{ item['item'].instances[0].state.name }}"
+      with_items: "{{ eip_info.results }}"
+
+    - name: cleanout previous dynamic inventory file
+      file:
+        path: "{{ aws_inventory_file }}"
+        state: absent
+      when: aws_inventory_file is defined
+
+    - name: add instances to the dynamic inventory file
+      lineinfile:
+        create: True
+        line: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }} specified_os_type={{ item['item'].instances[0].tags.OS_Type }} {{ common_linux_hostvars if (item['item'].instances[0].tags.OS_Type == 'Linux') else common_windows_hostvars }}"
+        path: "{{ aws_inventory_file }}"
+        state: present
+      with_items: "{{ eip_info.results }}"
+      when: aws_inventory_file is defined
+
+    - name: Wait for instance to become available, assuming it is in pending state
+      debug:
+        msg: "We are going to wait for instance {{ item['item'].instances[0].tags.Name }}"
+      with_items: "{{ eip_info.results }}"
+      when: item['item'].instances[0].state.name == "stopped"
+
+    - name: Print platform if it is defined
+      debug:
+        msg: "Platform for instance {{ item['item'].instances[0].tags.Name }} is {{ item['item'].instances[0].platform }}"
+      with_items: "{{ eip_info.results }}"
+      when: item['item'].instances[0].state.name == "stopped" and item['item'].instances[0].platform is defined
+
+#
+# Could use module wait_for_connection.  It supports both Linux and Windows targets but uses ping/win_ping
+#
+
+    - name: Wait for SSH port to be open
       wait_for:
-        host: "{{ item.public_dns_name }}"
+        delay: 20
+        host: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }}"
         port: 22
-        delay: 60
-        timeout: 320
         state: started
-      with_items: "{{ instance_info.instances }}"
+        timeout: 320
+      with_items: "{{ eip_info.results }}"
+      when: item['item'].instances[0].state.name == "pending" and item['item'].instances[0].tags.OS_Type == "Linux"
 
-- name: Configure instance(s) as NFS server
+    - name: Wait for RDP port to be open
+      win_wait_for:
+        delay: 20
+        host: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }}"
+        port: 5986
+        state: started
+        timeout: 320
+      with_items: "{{ eip_info.results }}"
+      when: item['item'].instances[0].state.name == "pending" and item['item'].instances[0].tags.OS_Type == "Windows"
+
+- name: Test connectivity to instances
   hosts: launched
   become: True
-  gather_facts: True
-  vars:
-    ansible_user:  ec2-user
-  environment:
-    ANSIBLE_HOST_KEY_CHECKING: False
+  gather_facts: False
+  vars_files:
+    - vars/aws_vars.yml
+#
+# This play defines the ssh key to use for remote access via the Ansible variable ansible_ssh_private_key_file
+# This can also be specified on the command line (--key-file <mykey.pem>) or as part of the inventory for a host
+# or a group.  A handy reference is https://stackoverflow.com/questions/44734179/specifying-ssh-key-in-ansible-playbook-file
+#
+#  vars:
+#    ansible_user: ec2-user
+#    ansible_ssh_private_key_file: "{{ aws_keypair_key_file }}"
+##  environment:
+##    ANSIBLE_HOST_KEY_CHECKING: False
 
-  roles:
-    - nfs_svr
+  tasks:
+    - name: Print a variable
+      debug:
+        msg: "working on host {{ inventory_hostname }} with os type of {{ hostvars[inventory_hostname]['specified_os_type'] }}"
+
+    - name: Print all host variables
+      debug:
+        msg: "{{ inventory_hostname }} host variables {{ hostvars[inventory_hostname] }}"
+
+    - name: Run ping
+      debug:
+        msg: "would run ping for {{ inventory_hostname }}"
+      when: hostvars[inventory_hostname]['specified_os_type'] == "Linux"
+
+    - name: Run win_ping
+      debug:
+        msg: "would run win_ping for {{ inventory_hostname }}"
+      when: hostvars[inventory_hostname]['specified_os_type'] == "Windows"
+
+#    - name: Change the Administrator password
+#      win_user:
+#        name: Administrator
+#        password: 
+#      when: hostvars[inventory_hostname]['specified_os_type'] == "Windows"
