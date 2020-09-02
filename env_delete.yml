@@ -1,93 +1,75 @@
 ---
-- name:  Cleanup AWS EC2 environment
-  hosts:  localhost
-  gather_facts:  False
-  vars_files:
-    - vars/aws_vars.yml
-    - vars/other.yml
-  environment:
-    AWS_ACCESS_KEY_ID:  "{{aws_access_key_id}}"
-    AWS_SECRET_ACCESS_KEY:  "{{aws_secret_access_key}}"
+- name: Delete AWS EC2 environment
+  hosts: localhost
+  gather_facts: False
 
   tasks:
-    - name:  gather information about the VPC
-      ec2_vpc_net_facts:
+    - name: Include project definitions from local file if specified
+      include_vars:
+        file: "{{ aws_project_vars }}"
+      when: aws_project_vars is defined
+
+    - name: Print aws_base_name
+      debug:
+        msg: "aws_base_name = {{ aws_base_name }}"
+        verbosity: 1
+
+    - name: Include credential definitions from local file if specified
+      include_vars:
+        file: "{{ cred_file }}"
+      when: cred_file is defined
+
+    - name: Print rhsm_activation_key
+      debug:
+        msg: "rhsm_activation_key = {{ rhsm_activation_key }}"
+        verbosity: 1
+
+    - name: gather information about the VPC
+      ec2_vpc_net_info:
         filters:
-          "tag:Name":  "{{ aws_vpc_name }}"
-        region:  "{{ aws_region }}"
-      register:  vpc_info
+          "tag:Name": "{{ aws_vpc_name }}"
+        region: "{{ aws_region }}"
+      register: vpc_info
 
-    - name:  print VPC information
+    - name: print VPC information
       debug:
-        var:  vpc_info
+        var: vpc_info
+        verbosity: 1
 
-    - name:  print VPC id information
-      debug:
-        var:  vpc_info.vpcs[0].id
+    - block:
 
-#    - name:  get security group facts
-#      ec2_group_facts:
-#        region:  "{{ aws_region }}"
-#        filters:
-#          vpc-id:  "{{ vpc_info.vpcs[0].id }}"
-#          group-name:  default
-#      register:  security_group_info
-#      when:  vpc_info.vpcs
+      - name: print VPC id information
+        debug:
+          var: vpc_info.vpcs[0].id
+          verbosity: 1
 
-#    - name:  print security group info
-#      debug:
-#        var:  security_group_info
+      - name: remove security group
+        ec2_group:
+          name: "{{ aws_securitygroup_name }}"
+          region: "{{ aws_region }}"
+          state: absent
 
-    - name:  remove security group
-      ec2_group:
-        name:  "{{ aws_securitygroup_name }}"
-        region:  "{{ aws_region }}"
-        state:  absent
+      - name: remove subnet for VPC
+        ec2_vpc_subnet:
+          az: "{{ aws_az }}"
+          cidr: "{{ aws_cidr_block }}"
+          region: "{{ aws_region }}"
+          state: absent
+          vpc_id: "{{ vpc_info.vpcs[0].id }}"
+        register: subnet_info
 
-    - name:  remove subnet for VPC
-      ec2_vpc_subnet:
-        az:  "{{ aws_az }}"
-        cidr:  "{{ aws_cidr_block }}"
-        region:  "{{ aws_region }}"
-        state:  absent
-        vpc_id:  "{{ vpc_info.vpcs[0].id }}"
-      register:  subnet_info
-      when:  vpc_info.vpcs
+      - name: remove internet gateway for VPC
+        ec2_vpc_igw:
+          region: "{{ aws_region }}"
+          state: absent
+          vpc_id: "{{ vpc_info.vpcs[0].id }}"
+        register: igw_info
 
-#    - name:  extract info for route table and remove
-#      block:
-#
-#        - name:  get route table info
-#          ec2_vpc_route_table_facts:
-#            region:  "{{ aws_region }}"
-#            filters:
-#              vpc-id:  "{{ vpc_info.vpcs[0].id }}"
-#          register:  route_table_facts
-#
-#        - name:  print route table facts
-#          debug:
-#            var:  route_table_facts
-#          when:  route_table_facts is defined
-#
-#        - name:  print route table id
-#          debug:
-#            var:  route_table_facts.route_tables[0].id
-#          when:  route_table_facts is defined
-#
-#        - name:  remove route table
-#          ec2_vpc_route_table:
-#            lookup:  id
-#            region:  "{{ aws_region }}"
-#            route_table_id:  "{{ route_table_facts.route_tables[0].id }}"
-#            state:  absent
-#            vpc_id:  "{{ vpc_info.vpcs[0].id }}"
-#          when:  route_table_facts is defined
-#
-#      when:  vpc_info.vpcs
+      - name: remove VPC
+        ec2_vpc_net:
+          name: "{{ aws_vpc_name }}"
+          region: "{{ aws_region }}"
+          cidr_block: "{{ aws_cidr_block }}"
+          state: absent
 
-    - name:  remove VPC
-      ec2_vpc_net:
-        name:  "{{ aws_vpc_name }}"
-        region:  "{{ aws_region }}"
-        cidr_block:  "{{ aws_cidr_block }}"
-        state:  absent
+      when: vpc_info.vpcs is defined

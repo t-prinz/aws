@@ -1,70 +1,139 @@
 ---
-- name:  Create AWS environment
-  hosts:  localhost
-  gather_facts:  False
-  vars_files:
-    - vars/aws_vars.yml
-    - vars/other.yml
-  environment:
-    AWS_ACCESS_KEY_ID:  "{{aws_access_key_id}}"
-    AWS_SECRET_ACCESS_KEY:  "{{aws_secret_access_key}}"
+
+# Items created:
+#   - VPC
+#   - Subnet
+#   - Internet gateway
+#   - Entry in default route table
+#   - Security Group
+#
+#
+# This playbook uses boto to access AWS credentials.  An alternative is to assign the credentials
+# to variables and then define the AWS environment variables as shown below.
+#
+#  environment:
+#    AWS_ACCESS_KEY_ID: "{{ aws_access_key_id }}"
+#    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key }}"
+
+- name: Create AWS environment
+  hosts: localhost
+  gather_facts: False
 
   tasks:
-    - name:  create VPC
+    - name: Include project definitions from local file if specified
+      include_vars:
+        file: "{{ aws_project_vars }}"
+      when: aws_project_vars is defined
+
+    - name: Print aws_base_name
+      debug:
+        msg: "aws_base_name = {{ aws_base_name }}"
+        verbosity: 1
+
+    - name: Include credential definitions from local file if specified
+      include_vars:
+        file: "{{ cred_file }}"
+      when: cred_file is defined
+
+    - name: Print rhsm_activation_key
+      debug:
+        msg: "rhsm_activation_key = {{ rhsm_activation_key }}"
+        verbosity: 1
+
+    - name: create VPC
       ec2_vpc_net:
-        name:  "{{ aws_vpc_name }}"
-        region:  "{{ aws_region }}"
-        cidr_block:  "{{ aws_cidr_block }}"
-        state:  present
-      register:  vpc_info
+        name: "{{ aws_vpc_name }}"
+        region: "{{ aws_region }}"
+        cidr_block: "{{ aws_cidr_block }}"
+        state: present
+      register: vpc_info
 
-    - name:  print vpc info
+    - name: print vpc info
       debug:
-        var:  vpc_info
+        var: vpc_info
+        verbosity: 1
 
-    - name:  create subnet for VPC
+    - name: create subnet for VPC
       ec2_vpc_subnet:
-        az:  "{{ aws_az }}"
-        cidr:  "{{ aws_cidr_block }}"
-#        map_public:  True
-        region:  "{{ aws_region }}"
-        state:  present
+        az: "{{ aws_az }}"
+        cidr: "{{ aws_cidr_block }}"
+#        map_public: True
+        region: "{{ aws_region }}"
+        state: present
         tags:
-          Name:  "{{ aws_subnet_name }}"
-        vpc_id:  "{{ vpc_info.vpc.id }}"
-      register:  subnet_info
+          Name: "{{ aws_subnet_name }}"
+        vpc_id: "{{ vpc_info.vpc.id }}"
+      register: subnet_info
 
-    - name:  print subnet info
+    - name: print subnet info
       debug:
-        var:  subnet_info
+        var: subnet_info
+        verbosity: 1
 
-    - name:  create security group
-      ec2_group:
-        description:  allow http, https, and ssh access
-        name:  "{{ aws_securitygroup_name }}"
-        region:  "{{ aws_region }}"
-        state:  present
+    - name: get information for VPC default route table
+      ec2_vpc_route_table_info:
+        filters:
+          vpc-id: "{{ vpc_info.vpc.id }}"
+        region: "{{ aws_region }}"
+      register: default_rtb_info
+
+    - name: print default route table info
+      debug:
+        var: default_rtb_info
+        verbosity: 1
+
+    - name: print default route table id
+      debug:
+        var: default_rtb_info.route_tables[0].id
+        verbosity: 1
+
+    - name: create internet gateway for VPC
+      ec2_vpc_igw:
+        region: "{{ aws_region }}"
+        state: present
         tags:
-          Name:  "{{ aws_securitygroup_name }}"
-        vpc_id:  "{{ vpc_info.vpc.id }}"
-        rules:
-          - proto:  tcp
-            from_port:  80
-            to_port:  80
-            cidr_ip:  0.0.0.0/0
-          - proto:  tcp
-            from_port:  443
-            to_port:  443
-            cidr_ip:  0.0.0.0/0
-          - proto:  tcp
-            from_port:  22
-            to_port:  22
-            cidr_ip:  0.0.0.0/0
-        rules_egress:
-          - proto:  all
-            cidr_ip:  0.0.0.0/0
-      register:  securitygroup_info
+          Name: "{{ aws_igw_name }}"
+        vpc_id: "{{ vpc_info.vpc.id }}"
+      register: igw_info
 
-    - name:  print security group information
+    - name: print internet gateway info
+      debug:
+        var: igw_info
+        verbosity: 1
+
+    - name: create route table entry for the internet gateway
+      ec2_vpc_route_table:
+        lookup: id
+        region: "{{ aws_region }}"
+        route_table_id: "{{ default_rtb_info.route_tables[0].id }}"
+        routes:
+          - dest: 0.0.0.0/0
+            gateway_id: "{{ igw_info.gateway_id }}"
+        state: present
+        subnets:
+          - "{{ subnet_info.subnet.id }}"
+        vpc_id: "{{ vpc_info.vpc.id }}"
+      register: default_rtb_info
+
+    - name: print default route table info
+      debug:
+        var: default_rtb_info
+        verbosity: 1
+
+    - name: create security group
+      ec2_group:
+        description: allow http, https, and ssh access
+        name: "{{ aws_securitygroup_name }}"
+        region: "{{ aws_region }}"
+        state: present
+        tags:
+          Name: "{{ aws_securitygroup_name }}"
+        vpc_id: "{{ vpc_info.vpc.id }}"
+        rules: "{{ aws_security_group_rules }}"
+        rules_egress: "{{ aws_security_group_rules_egress }}"
+      register: securitygroup_info
+
+    - name: print security group information
       debug:
         var: securitygroup_info
+        verbosity: 1
