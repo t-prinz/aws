@@ -1,0 +1,49 @@
+---
+- name: Retrieve information about AWS EC2 environment
+  hosts: localhost
+  gather_facts: False
+
+  tasks:
+    - name: Include project definitions from local file if specified
+      include_vars:
+        file: "{{ aws_project_vars }}"
+      when: aws_project_vars is defined
+
+    - name: Print aws_base_name
+      debug:
+        msg: "aws_base_name = {{ aws_base_name }}"
+        verbosity: 1
+
+    - name: Include credential definitions from local file if specified
+      include_vars:
+        file: "{{ cred_file }}"
+      when: cred_file is defined
+
+    - name: Print rhsm_activation_key
+      debug:
+        msg: "rhsm_activation_key = {{ rhsm_activation_key }}"
+        verbosity: 1
+
+    - name: gather information about the VPC
+      ec2_vpc_net_info:
+        filters:
+          "tag:Name": "{{ aws_vpc_name }}"
+        region: "{{ aws_region }}"
+      register: vpc_info
+
+    - name: print VPC information
+      debug:
+        var: vpc_info
+
+    - name: get security group facts
+      ec2_group_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc_info.vpcs[0].id }}"
+          group-name: default
+      register: security_group_info
+      when: vpc_info.vpcs is defined
+
+    - name: print security group info
+      debug:
+        var: security_group_info
