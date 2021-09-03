@@ -101,3 +101,6 @@ aws_vpc_name: "{{ aws_base_name }}-vpc"
 aws_subnet_name: "{{ aws_base_name }}-subnet"
 aws_igw_name: "{{ aws_base_name }}-igw"
 aws_securitygroup_name: "{{ aws_base_name }}-securitygroup"
+
+aws_linux_ansible_user: "ec2-user"
+aws_windows_ansible_user: "Administrator"

@@ -20,29 +20,13 @@
   gather_facts: False
 
   tasks:
-    - name: Include project definitions from local file if specified
-      include_vars:
-        file: "{{ aws_project_vars }}"
-      when: aws_project_vars is defined
-
-    - name: Print aws_base_name
-      debug:
-        msg: "aws_base_name = {{ aws_base_name }}"
-        verbosity: 1
-
-    - name: Include credential definitions from local file if specified
-      include_vars:
-        file: "{{ cred_file }}"
-      when: cred_file is defined
-
-    - name: Print rhsm_activation_key
-      debug:
-        msg: "rhsm_activation_key = {{ rhsm_activation_key }}"
-        verbosity: 1
+    - name: Execute tasks to get the project and credential information
+      include_tasks: get_project_cred_info_tasks.yml
 
     - name: create VPC
       ec2_vpc_net:
         name: "{{ aws_vpc_name }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         cidr_block: "{{ aws_cidr_block }}"
         state: present
@@ -58,6 +42,7 @@
         az: "{{ aws_az }}"
         cidr: "{{ aws_cidr_block }}"
 #        map_public: True
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         state: present
         tags:
@@ -74,6 +59,7 @@
       ec2_vpc_route_table_info:
         filters:
           vpc-id: "{{ vpc_info.vpc.id }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
       register: default_rtb_info
 
@@ -89,6 +75,7 @@
 
     - name: create internet gateway for VPC
       ec2_vpc_igw:
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         state: present
         tags:
@@ -104,6 +91,7 @@
     - name: create route table entry for the internet gateway
       ec2_vpc_route_table:
         lookup: id
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         route_table_id: "{{ default_rtb_info.route_tables[0].id }}"
         routes:
@@ -124,6 +112,7 @@
       ec2_group:
         description: allow http, https, and ssh access
         name: "{{ aws_securitygroup_name }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         state: present
         tags:

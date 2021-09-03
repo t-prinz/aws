@@ -17,47 +17,37 @@
   hosts: localhost
   gather_facts: False
   vars:
-    credfile: "../../.mycreds/democreds.yml"
-    linux_ansible_username: "ec2-user"
-  vars_files:
-    - vars/aws_vars.yml
+    win_passwd_dict: {}
 
   tasks:
+    - name: Execute tasks to get the project and credential information
+      include_tasks: get_project_cred_info_tasks.yml
 
-###
-    - name: Check for credentials file
-      stat:
-        path: "{{ credfile }}"
-      register: stat_results
+#    - name: Include project definitions from local file if specified
+#      include_vars:
+#        file: "{{ aws_project_vars }}"
+#      when: aws_project_vars is defined
 
-    - name: Define credentials using local file
-      block:
+#    - name: Print aws_base_name
+#      debug:
+#        msg: "aws_base_name = {{ aws_base_name }}"
+#        verbosity: 1
 
-      - name: Include variable definitions from local file
-        include_vars:
-          file: "{{ credfile }}"
+#    - name: Include credential definitions from local file if specified
+#      include_vars:
+#        file: "{{ cred_file }}"
+#      when: cred_file is defined
 
-      - name: Define Ansible Tower credentials based on local file
-        set_fact:
-          windows_admin_username: "{{ cf_windows_admin_username }}"
-          windows_admin_password: "{{ cf_windows_admin_password }}"
+#    - name: Print rhsm_activation_key
+#      debug:
+#        msg: "rhsm_activation_key = {{ rhsm_activation_key }}"
+#        verbosity: 1
 
-      when: stat_results.stat.exists
-
-    - name: Define credentials using Ansible Tower custom credentials
-      block:
-
-      - name: Define Ansible Tower credentials based on custom credential
-        set_fact:
-          windows_admin_username: "{{ at_windows_admin_username }}"
-          windows_admin_password: "{{ at_windows_admin_password }}"
-
-      when: not stat_results.stat.exists
-###
     - name: gather information about the VPC
       ec2_vpc_net_info:
         filters:
           "tag:Name": "{{ aws_vpc_name }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
       register: vpc_info
 
@@ -69,6 +59,7 @@
 
     - name: get security group facts
       ec2_group_info:
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         filters:
           vpc-id: "{{ vpc_info.vpcs[0].id }}"
@@ -92,6 +83,7 @@
         filters:
           vpc-id: "{{ vpc_info.vpcs[0].id }}"
           "tag:Name": "{{ aws_subnet_name }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
       register: subnet_info
       when: vpc_info.vpcs is defined
@@ -114,6 +106,7 @@
 #        instance_type: "{{ item.aws_instance_type }}"
 #        image: "{{ item.aws_image }}"
 #        wait: true
+#        profile: "{{ aws_profile }}"
 #        region: "{{ aws_region }}"
 #        vpc_subnet_id: "{{ subnet_info.subnets[0].id }}"
 #        exact_count: "{{ item.aws_exact_count }}"
@@ -130,6 +123,12 @@
 #      with_items: "{{ aws_instances }}"
 #      register: instances_info
 
+#    - name: define fact for Windows systems
+#      set_fact:
+#        windows_tower_callback:
+#          windows: 'True'
+#          set_password: "{{ windows_admin_password }}"
+
     - name: create and launch instance
       ec2_instance:
         image_id: "{{ item.aws_image_id }}"
@@ -138,6 +137,7 @@
         name: "{{ aws_base_name }}-{{ item.ansible_instance_shortname }}"
         network:
           assign_public_ip: "{{ item.aws_assign_public_ip }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         security_group: "{{ security_group_info.security_groups[0].group_id }}"
 #        tower_callback.windows: "{{ ('True') if (item.instance_os_type == 'Windows') else omit }}"
@@ -145,11 +145,13 @@
         state: present
         tags:
           OS_Type: "{{ item.instance_os_type }}"
-        volumes:
-          - device_name: /dev/sdb
-            ebs:
-              volume_size: 10
-              delete_on_termination: True
+        user_data: "{{ lookup('file', 'win_ec2_user_data.ps1') if (item.instance_os_type == 'Windows') else omit }}"
+        volumes: "{{ item.aws_volume_list }}"
+#        volumes:
+#          - device_name: /dev/sda1
+#            ebs:
+#              volume_size: 40
+#              delete_on_termination: True
         vpc_subnet_id: "{{ subnet_info.subnets[0].id }}"
         wait: true
       with_items: "{{ aws_instances }}"
@@ -158,7 +160,7 @@
     - name: print instance info
       debug:
         var: instances_info.results
-        verbosity: 1
+#        verbosity: 1
 
     - name: print instance ids
       debug:
@@ -166,38 +168,25 @@
         verbosity: 1
       with_items: "{{ instances_info.results }}"
 
-###
     - name: Define common Linux host variables
       set_fact:
-        common_linux_hostvars: "ansible_user={{ linux_ansible_username }} ansible_ssh_private_key_file={{ aws_keypair_key_file }}"
+        common_linux_hostvars: "ansible_user={{ aws_linux_ansible_user }} ansible_ssh_private_key_file={{ aws_keypair_key_file }}"
 
     - name: Define common Windows host variables
       set_fact:
-        common_windows_hostvars: "ansible_user={{ windows_admin_username }} ansible_password={{ windows_admin_password }} ansible_connection=winrm ansible_winrm_transport=ntlm ansible_port=5986 ansible_winrm_server_cert_validation=ignore"
-###
+        common_windows_hostvars: "ansible_user={{ windows_admin_username }} ansible_password={{ windows_admin_password }} ansible_connection=winrm ansible_winrm_transport=ntlm ansible_port=5985 ansible_winrm_server_cert_validation=ignore"
 
-    - name: Add new instance to host group, if the instance has been marked as having changed
-      add_host:
-        hostname: "{{ item.instances[0].public_dns_name }}"
-        groupname: launched
-        ansible_ssh_extra_args: "{{ ('-o StrictHostKeyChecking=no') if (item.instances[0].tags.OS_Type == 'Linux') else omit }}"
-        ansible_user: "{{ linux_ansible_username if (item.instances[0].tags.OS_Type == 'Linux') else windows_admin_username }}"
-        ansible_ssh_private_key_file: "{{ aws_keypair_key_file if (item.instances[0].tags.OS_Type == 'Linux') else omit }}"
-        ansible_password: "{{ windows_admin_password if (item.instances[0].tags.OS_Type == 'Windows') else omit }}"
-        ansible_connection: "{{ ('winrm') if (item.instances[0].tags.OS_Type == 'Windows') else omit }}"
-        ansible_winrm_transport: "{{ ('ntlm') if (item.instances[0].tags.OS_Type == 'Windows') else omit }}"
-        ansible_port: "{{ ('5986') if (item.instances[0].tags.OS_Type == 'Windows') else omit }}"
-        specified_os_type: "{{ item.instances[0].tags.OS_Type }}"
-      with_items: "{{ instances_info.results }}"
-      when: item.changed
+# TODO:  add tag information
 
     - name: Generate elastic IP for instances
       ec2_eip:
         device_id: "{{ item.instance_ids[0] }}"
+        in_vpc: True
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         release_on_disassociation: yes
-        tag_name: "Name"
-        tag_value: "{{ item.instances[0].key_name }}"
+#        tag_name: "Name"
+#        tag_value: "{{ item.instances[0].key_name }}"
       with_items: "{{ instances_info.results }}"
       register: eip_info
 
@@ -209,6 +198,7 @@
 
     - name: tag eip
       ec2_tag:
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         resource: "{{ item.allocation_id }}"
         state: present
@@ -229,6 +219,7 @@
 
     - name: Generate route53 entry for the elastic IP
       route53:
+        profile: "{{ aws_profile }}"
         record: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }}"
         state: present
         ttl: 300
@@ -244,17 +235,42 @@
         var: route53_info
         verbosity: 1
 
-#    - name: Add new instance to host group
-#      add_host:
-#        hostname: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }}"
-#        groupname: launched
-#        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no"
-#      with_items: "{{ eip_info.results }}"
-
     - name: Print state of instances
       debug:
         msg: " Instance {{ item['item'].instances[0].tags.Name }} is {{ item['item'].instances[0].state.name }}"
+        verbosity: 1
       with_items: "{{ eip_info.results }}"
+
+    - name: Print eip instance ID
+      debug:
+        msg: "EIP instance ID is {{ item['item'].instances[0].instance_id }}" 
+        verbosity: 1
+      with_items: "{{ eip_info.results }}"
+
+    - name: Loop over the tasks file that will get the Windows passwords and create a dictionary
+      include_tasks: instance_create_tasks.yml
+      with_items: "{{ eip_info.results }}"
+
+    - name: Print Windows password dictionary
+      debug:
+        var: win_passwd_dict
+        verbosity: 1
+
+    - name: Add new instance to host group, if the instance has been marked as having changed
+      add_host:
+        hostname: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }}"
+        groupname: launched
+        ansible_ssh_extra_args: "{{ ('-o StrictHostKeyChecking=no') if (item['item'].instances[0].tags.OS_Type == 'Linux') else omit }}"
+        ansible_user: "{{ aws_linux_ansible_user if (item['item'].instances[0].tags.OS_Type == 'Linux') else windows_admin_username }}"
+        ansible_ssh_private_key_file: "{{ aws_keypair_key_file if (item['item'].instances[0].tags.OS_Type == 'Linux') else omit }}"
+#        ansible_password: "{{ windows_admin_password if (item['item'].instances[0].tags.OS_Type == 'Windows') else omit }}"
+        ansible_password: "{{ win_passwd_dict[item['item'].instances[0].tags.Name] if (item['item'].instances[0].tags.OS_Type == 'Windows') else omit }}"
+        ansible_connection: "{{ ('winrm') if (item['item'].instances[0].tags.OS_Type == 'Windows') else omit }}"
+        ansible_winrm_transport: "{{ ('ntlm') if (item['item'].instances[0].tags.OS_Type == 'Windows') else omit }}"
+        ansible_port: "{{ ('5985') if (item['item'].instances[0].tags.OS_Type == 'Windows') else omit }}"
+        specified_os_type: "{{ item['item'].instances[0].tags.OS_Type }}"
+      with_items: "{{ eip_info.results }}"
+      when: item.changed
 
     - name: cleanout previous dynamic inventory file
       file:
@@ -266,53 +282,22 @@
       lineinfile:
         create: True
         line: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }} specified_os_type={{ item['item'].instances[0].tags.OS_Type }} {{ common_linux_hostvars if (item['item'].instances[0].tags.OS_Type == 'Linux') else common_windows_hostvars }}"
+        mode: "0644"
         path: "{{ aws_inventory_file }}"
         state: present
       with_items: "{{ eip_info.results }}"
       when: aws_inventory_file is defined
 
-    - name: Wait for instance to become available, assuming it is in pending state
-      debug:
-        msg: "We are going to wait for instance {{ item['item'].instances[0].tags.Name }}"
-      with_items: "{{ eip_info.results }}"
-      when: item['item'].instances[0].state.name == "stopped"
-
     - name: Print platform if it is defined
       debug:
         msg: "Platform for instance {{ item['item'].instances[0].tags.Name }} is {{ item['item'].instances[0].platform }}"
+        verbosity: 1
       with_items: "{{ eip_info.results }}"
-      when: item['item'].instances[0].state.name == "stopped" and item['item'].instances[0].platform is defined
+      when: item['item'].instances[0].platform is defined
 
-#
-# Could use module wait_for_connection.  It supports both Linux and Windows targets but uses ping/win_ping
-#
-
-    - name: Wait for SSH port to be open
-      wait_for:
-        delay: 20
-        host: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }}"
-        port: 22
-        state: started
-        timeout: 320
-      with_items: "{{ eip_info.results }}"
-      when: item['item'].instances[0].state.name == "pending" and item['item'].instances[0].tags.OS_Type == "Linux"
-
-    - name: Wait for RDP port to be open
-      win_wait_for:
-        delay: 20
-        host: "{{ item['item'].instances[0].tags.Name }}.{{ aws_route53_zone }}"
-        port: 5986
-        state: started
-        timeout: 320
-      with_items: "{{ eip_info.results }}"
-      when: item['item'].instances[0].state.name == "pending" and item['item'].instances[0].tags.OS_Type == "Windows"
-
-- name: Test connectivity to instances
+- name: Play to test connectivity to newly-created instances and to update Windows password
   hosts: launched
-  become: True
   gather_facts: False
-  vars_files:
-    - vars/aws_vars.yml
 #
 # This play defines the ssh key to use for remote access via the Ansible variable ansible_ssh_private_key_file
 # This can also be specified on the command line (--key-file <mykey.pem>) or as part of the inventory for a host
@@ -325,26 +310,104 @@
 ##    ANSIBLE_HOST_KEY_CHECKING: False
 
   tasks:
-    - name: Print a variable
+    - name: Execute tasks to get the project and credential information
+      include_tasks: get_project_cred_info_tasks.yml
+
+    - name: Print name of host
       debug:
-        msg: "working on host {{ inventory_hostname }} with os type of {{ hostvars[inventory_hostname]['specified_os_type'] }}"
+        msg: "Working on host {{ inventory_hostname }} with os type of {{ hostvars[inventory_hostname]['specified_os_type'] }}"
 
     - name: Print all host variables
       debug:
         msg: "{{ inventory_hostname }} host variables {{ hostvars[inventory_hostname] }}"
+        verbosity: 1
+
+#
+# Could use module wait_for_connection.  It supports both Linux and Windows targets but uses ping/win_ping
+#
+
+    - name: Wait for SSH port to be open
+      wait_for:
+        delay: 10
+        host: "{{ inventory_hostname }}"
+        port: 22
+        state: started
+        timeout: 320
+      when: hostvars[inventory_hostname]['specified_os_type'] == "Linux"
+
+    - name: Wait for RDP port to be open
+      win_wait_for:
+        delay: 10
+        host: "{{ inventory_hostname }}"
+        port: 5985
+        state: started
+        timeout: 320
+      when: hostvars[inventory_hostname]['specified_os_type'] == "Windows"
 
     - name: Run ping
       debug:
-        msg: "would run ping for {{ inventory_hostname }}"
+        msg: "Going to run ping for {{ inventory_hostname }}"
+        verbosity: 1
+      when: hostvars[inventory_hostname]['specified_os_type'] == "Linux"
+
+    - name: Run ping
+      ping:
       when: hostvars[inventory_hostname]['specified_os_type'] == "Linux"
 
     - name: Run win_ping
       debug:
-        msg: "would run win_ping for {{ inventory_hostname }}"
+        msg: "Going to run win_ping for {{ inventory_hostname }}"
+        verbosity: 1
       when: hostvars[inventory_hostname]['specified_os_type'] == "Windows"
 
-#    - name: Change the Administrator password
-#      win_user:
-#        name: Administrator
-#        password: 
-#      when: hostvars[inventory_hostname]['specified_os_type'] == "Windows"
+    - name: Run win_ping
+      win_ping:
+      when: hostvars[inventory_hostname]['specified_os_type'] == "Windows"
+
+    - name: Gather facts for Linux systems
+      setup:
+      when: hostvars[inventory_hostname]['specified_os_type'] == "Linux"
+
+    - name: Print ansible_facts
+      debug:
+        var: ansible_facts
+
+    - name: Print ansible_facts distribution
+      debug:
+        var: ansible_facts['distribution']
+
+    - name: Block to disable AWS RHUI and to set the hostname for RedHat systems
+      block:
+
+        - name: Ensure the AWS client is removed
+          yum:
+            name: "rh-amazon-rhui-client*"
+            state: absent
+
+        - name: Ensure yum plugin configuration is correct
+          copy:
+            dest: /etc/yum/pluginconf.d/product-id.conf
+            src: files/product-id.conf
+
+        - name: Print the hostname
+          debug:
+            msg: "Setting the hostname to {{ inventory_hostname }}"
+
+        - name: Update the hostname
+          command: "hostnamectl set-hostname {{ inventory_hostname }}"
+
+#        - name: Update the hostname
+#          ansible.builtin.hostname:
+#            name: "{{ inventory_hostname }}"
+#            use: redhat
+
+      when: ansible_facts['distribution'] == "RedHat"
+      become: True
+#     End block for RedHat systems
+#     Reference:  https://access.redhat.com/documentation/en-us/red_hat_satellite/6.3/html/installation_guide/running_red_hat_satellite_on_amazon_web_services
+
+    - name: Change the Administrator password
+      win_user:
+        name: Administrator
+        password: "{{ windows_admin_password }}"
+      when: hostvars[inventory_hostname]['specified_os_type'] == "Windows"

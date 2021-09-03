@@ -4,24 +4,30 @@
 #
 # ansible-playbook -i <inventory> instance_manage.yml --tags stop
 #
-# stop: stop the instances
-# start: start instances
-# delete: delete instances and all resources associated with the instances:
-#   - route53 dns entries
-#   - elastic ip's
-#   - instance
+# Tag options:
+#
+#   stop: stop the instances
+#   start: start instances
+#   delete: delete instances and all resources associated with the instances:
+#     - route53 dns entries
+#     - elastic ip's
+#     - instance
 #
 - name: Manage instances (note use of tags "stop," "start," and "delete")
   hosts: localhost
   gather_facts: False
-  vars_files:
-    - vars/aws_vars.yml
 
   tasks:
+    - name: Execute tasks to get the project and credential information
+      include_tasks: get_project_cred_info_tasks.yml
+      tags:
+        - always
+
     - name: gather information about the VPC
       ec2_vpc_net_info:
         filters:
           "tag:Name": "{{ aws_vpc_name }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
       register: vpc_info
       tags:
@@ -45,6 +51,7 @@
       ec2_instance_info:
         filters:
           vpc-id: "{{ vpc_info.vpcs[0].id }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
       register: instance_info
       tags:
@@ -77,6 +84,7 @@
       ec2_eip_info:
         filters:
           tag:Name: "{{ item.tags.Name }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
       register: eip_info
       with_items: "{{ instance_info.instances }}"
@@ -94,6 +102,7 @@
       block:
         - name: get route53 zone id
           route53_zone:
+            profile: "{{ aws_profile }}"
             zone: "{{ aws_route53_zone }}"
           register: route53_zone_info
           tags:
@@ -101,6 +110,7 @@
 
         - name: get route53 dns info for the instances
           route53_info:
+            profile: "{{ aws_profile }}"
             type: A
             query: record_sets
             hosted_zone_id: "{{ route53_zone_info.zone_id }}"
@@ -125,6 +135,7 @@
         instance_ids: "{{ item.instance_id }}"
         instance_type: "{{ item.instance_type }}"
         name: "{{ item.tags.Name }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         state: stopped
       with_items: "{{ instance_info.instances }}"
@@ -138,6 +149,7 @@
         instance_ids: "{{ item.instance_id }}"
         instance_type: "{{ item.instance_type }}"
         name: "{{ item.tags.Name }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         state: started
       with_items: "{{ instance_info.instances }}"
@@ -149,12 +161,14 @@
       block:
         - name: delete the route53 dns entries
           route53:
+            profile: "{{ aws_profile }}"
             record: "{{ item.ResourceRecordSets[0].Name }}"
             state: absent
             ttl: "{{ item.ResourceRecordSets[0].TTL }}"
             type: "{{ item.ResourceRecordSets[0].Type }}"
             value: "{{ item.ResourceRecordSets[0].ResourceRecords[0].Value }}"
             wait: Yes
+#            wait: No
             zone: "{{ aws_route53_zone }}"
           when: item.ResourceRecordSets[0].Name is defined
           with_items: "{{ route53_out.results }}"
@@ -163,6 +177,7 @@
           ec2_eip:
             device_id: "{{ item.addresses[0].instance_id }}"
             public_ip: "{{ item.addresses[0].public_ip }}"
+            profile: "{{ aws_profile }}"
             region: "{{ aws_region }}"
             release_on_disassociation: yes
             state: absent
@@ -175,9 +190,16 @@
             instance_ids: "{{ item.instance_id }}"
             instance_type: "{{ item.instance_type }}"
             name: "{{ item.tags.Name }}"
+            profile: "{{ aws_profile }}"
             region: "{{ aws_region }}"
             state: absent
           with_items: "{{ instance_info.instances }}"
+
+        - name: cleanout previous dynamic inventory file
+          file:
+            path: "{{ aws_inventory_file }}"
+            state: absent
+          when: aws_inventory_file is defined
       tags:
         - never
         - delete

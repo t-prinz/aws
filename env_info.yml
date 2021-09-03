@@ -4,30 +4,34 @@
   gather_facts: False
 
   tasks:
-    - name: Include project definitions from local file if specified
-      include_vars:
-        file: "{{ aws_project_vars }}"
-      when: aws_project_vars is defined
+    - name: Execute tasks to get the project and credential information
+      include_tasks: get_project_cred_info_tasks.yml
 
-    - name: Print aws_base_name
-      debug:
-        msg: "aws_base_name = {{ aws_base_name }}"
-        verbosity: 1
+#    - name: Include project definitions from local file if specified
+#      include_vars:
+#        file: "{{ aws_project_vars }}"
+#      when: aws_project_vars is defined
 
-    - name: Include credential definitions from local file if specified
-      include_vars:
-        file: "{{ cred_file }}"
-      when: cred_file is defined
+#    - name: Print aws_base_name
+#      debug:
+#        msg: "aws_base_name = {{ aws_base_name }}"
+#        verbosity: 1
 
-    - name: Print rhsm_activation_key
-      debug:
-        msg: "rhsm_activation_key = {{ rhsm_activation_key }}"
-        verbosity: 1
+#    - name: Include credential definitions from local file if specified
+#      include_vars:
+#        file: "{{ cred_file }}"
+#      when: cred_file is defined
+
+#    - name: Print rhsm_activation_key
+#      debug:
+#        msg: "rhsm_activation_key = {{ rhsm_activation_key }}"
+#        verbosity: 1
 
     - name: gather information about the VPC
       ec2_vpc_net_info:
         filters:
           "tag:Name": "{{ aws_vpc_name }}"
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
       register: vpc_info
 
@@ -37,6 +41,7 @@
 
     - name: get security group facts
       ec2_group_info:
+        profile: "{{ aws_profile }}"
         region: "{{ aws_region }}"
         filters:
           vpc-id: "{{ vpc_info.vpcs[0].id }}"

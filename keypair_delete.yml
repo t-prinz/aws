@@ -1,0 +1,31 @@
+---
+
+# Items created:
+#
+#
+# This playbook uses boto to access AWS credentials.  An alternative is to assign the credentials
+# to variables and then define the AWS environment variables as shown below.
+#
+#  environment:
+#    AWS_ACCESS_KEY_ID: "{{ aws_access_key_id }}"
+#    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key }}"
+
+- name: Create AWS environment
+  hosts: localhost
+  gather_facts: False
+
+  tasks:
+    - name: Execute tasks to get the project and credential information
+      include_tasks: get_project_cred_info_tasks.yml
+
+    - name: Delete EC2 key pair
+      ec2_key:
+        name: "{{ aws_keypair }}"
+        profile: "{{ aws_profile }}"
+        state: absent
+      register: keyinfo
+
+    - name: Delete the key file
+      file:
+        path: "{{ aws_keypair_key_file }}"
+        state: absent

@@ -1,0 +1,27 @@
+---
+- name: Wait at least 4 minutes for Windows password to be available (this waits 5)
+  pause:
+    minutes: 5
+  when: item['item'].instances[0].tags.OS_Type == 'Windows'
+
+- name: Get the AWS-generated Windows passwords
+  ec2_win_password:
+    instance_id: "{{ item['item'].instances[0].instance_id }}" 
+    key_data: "{{ aws_keypair_key_data }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+    wait: True
+  when: item['item'].instances[0].tags.OS_Type == 'Windows'
+#  when: item.changed
+  register: aws_gen_windows_password
+
+- name: Print Windows password
+  debug:
+    var: aws_gen_windows_password
+    verbosity: 1
+  when: item['item'].instances[0].tags.OS_Type == 'Windows'
+
+- name: Add an entry to the password dictionary
+  set_fact:
+    win_passwd_dict: "{{ win_passwd_dict | combine({ item['item'].instances[0].tags.Name: aws_gen_windows_password.win_password }) }}"
+  when: item['item'].instances[0].tags.OS_Type == 'Windows'

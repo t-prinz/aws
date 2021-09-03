@@ -1,7 +1,9 @@
 # aws
 AWS examples
 
-ansible-playbook -i <inventory> -e <"cred_file=credentials_file"> -e "aws_project_vars=project_variables_file" <-e "aws_inventory_file=inventory_file">
+ansible-playbook -i <inventory> -e <"cred_file=credentials_file"> -e "aws_project_vars=project_variables_file"
+
+https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html
 
 #
 # These playbooks uses boto to access AWS credentials.  An alternative is to assign the credentials
@@ -24,3 +26,8 @@ ansible-playbook -i <inventory> -e <"cred_file=credentials_file"> -e "aws_projec
 #      with_items: "{{ eip_info.results }}"
 #      when: item['item'].instances[0].state.name == "stopped" and item['item'].instances[0].platform is defined
 #
+# You can specify user data for an instance.  This is useful for Windows instances where a Powershell script is
+# specified that changes the network profile so that Ansible can connect.
+#
+# Windows reference:  https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/ec2-windows-user-data.html
+# Linux reference:  https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html

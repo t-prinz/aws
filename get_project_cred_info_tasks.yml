@@ -1,0 +1,21 @@
+---
+- name: Include project definitions from local file if specified
+  include_vars:
+    file: "{{ aws_project_vars }}"
+  when: aws_project_vars is defined
+  tags:
+    - always
+
+- name: Include credential definitions from local file if specified
+  include_vars:
+    file: "{{ cred_file }}"
+  when: cred_file is defined
+  tags:
+    - always
+
+- name: As a test, print rhsm_activation_key
+  debug:
+    msg: "rhsm_activation_key = {{ rhsm_activation_key }}"
+    verbosity: 1
+  tags:
+    - always
