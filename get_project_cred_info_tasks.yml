@@ -1,21 +1,63 @@
 ---
-- name: Include project definitions from local file if specified
-  include_vars:
-    file: "{{ aws_project_vars }}"
-  when: aws_project_vars is defined
+- name: Ensure that aws_cred_vars is defined
+  assert:
+    fail_msg: "The variable aws_cred_vars must be defined."
+    that:
+      - aws_cred_vars is defined
   tags:
     - always
 
-- name: Include credential definitions from local file if specified
-  include_vars:
-    file: "{{ cred_file }}"
-  when: cred_file is defined
+- name: Obtain aws_cred_vars file stats
+  stat:
+    path: "{{ aws_cred_vars }}"
+  register: result
   tags:
     - always
 
-- name: As a test, print rhsm_activation_key
+- name: Ensure that the file defined by aws_cred_vars exists
+  assert:
+    fail_msg: "The file defined by aws_cred_vars, {{ aws_cred_vars }}, does not exist."
+    that:
+      - result.stat.exists
+  tags:
+    - always
+
+- name: Include variables from file defined by aws_cred_vars
+  include_vars:
+    file: "{{ aws_cred_vars }}"
+  tags:
+    - always
+
+- name: Ensure that aws_config_vars is defined
+  assert:
+    fail_msg: "The variable aws_config_vars must be defined."
+    that:
+      - aws_config_vars is defined
+  tags:
+    - always
+
+- name: Obtain aws_config_vars file stats
+  stat:
+    path: "{{ aws_config_vars }}"
+  register: result
+  tags:
+    - always
+
+- name: Ensure that the file defined by aws_config_vars exists
+  assert:
+    fail_msg: "The file defined by aws_config_vars, {{ aws_config_vars }}, does not exist."
+    that:
+      - result.stat.exists
+  tags:
+    - always
+
+- name: Include variables from file defined by aws_config_vars
+  include_vars:
+    file: "{{ aws_config_vars }}"
+  tags:
+    - always
+
+- name: Print the VPC name
   debug:
-    msg: "rhsm_activation_key = {{ rhsm_activation_key }}"
+    var: aws_vpc_name
     verbosity: 1
-  tags:
-    - always

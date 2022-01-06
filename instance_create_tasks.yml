@@ -1,4 +1,6 @@
 ---
+#  Reference:  https://aws.amazon.com/premiumsupport/knowledge-center/retrieve-windows-admin-password/
+
 - name: Wait at least 4 minutes for Windows password to be available (this waits 5)
   pause:
     minutes: 5

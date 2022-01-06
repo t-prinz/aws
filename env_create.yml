@@ -6,14 +6,6 @@
 #   - Internet gateway
 #   - Entry in default route table
 #   - Security Group
-#
-#
-# This playbook uses boto to access AWS credentials.  An alternative is to assign the credentials
-# to variables and then define the AWS environment variables as shown below.
-#
-#  environment:
-#    AWS_ACCESS_KEY_ID: "{{ aws_access_key_id }}"
-#    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key }}"
 
 - name: Create AWS environment
   hosts: localhost
